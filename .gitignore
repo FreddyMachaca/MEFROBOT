@@ -1,0 +1,52 @@
+# Archivos y carpetas generados por Visual Studio
+.vs/
+bin/
+obj/
+*.user
+*.suo
+*.userprefs
+*.vsp
+*.vspx
+*.vspscc
+*.vssscc
+*.sln.docstates
+
+# Archivos generados durante la compilación
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Bb]uild/
+[Bb]in/
+[Oo]bj/
+
+# Archivos de caché de NuGet
+*.nupkg
+*.pfx
+*.snk
+**/packages/*
+!**/packages/build/
+
+# Archivos temporales
+*.tmp
+*.temp
+*.log
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Archivos específicos de VS
+.suo
+.user
+.vs/
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+*.VisualState.xml
+TestResult.xml
+
+# Archivos generados de WPF
+*.baml
+*.g.cs
+*.g.i.cs
