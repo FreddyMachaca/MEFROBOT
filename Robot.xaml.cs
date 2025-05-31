@@ -16,7 +16,9 @@ namespace MEFRobot
         IrBateria,
         Recargar,
         Muerto,
-        Aleatorio
+        Aleatorio,
+        SiguiendoCamino,
+        Completado
     }
     /// <summary>
     /// Lógica de interacción para Robot.xaml
@@ -34,6 +36,14 @@ namespace MEFRobot
         public EstadoEnum Estado { get; set; }
         readonly DispatcherTimer timer;
         public event EventHandler<String> ActualizaDatos;
+        
+        // Algoritmo A*
+        private AStarPathfinder _pathfinder;
+        private List<Node> _currentPath;
+        private int _currentPathIndex;
+        private Node _currentTarget;
+        private int _paquetesRecolectados = 0;
+        private Paquete _targetPaquete = null;
         
         public Robot(int x, int y, int bateriaTotal = 1000, int umbralBateria = 350)
         {
@@ -53,6 +63,11 @@ namespace MEFRobot
             timer = new DispatcherTimer();
             timer.Interval = new TimeSpan(0,0,0,0,5);
             timer.Tick += Timer_Tick;
+            
+            // Inicializar el algoritmo A*
+            _pathfinder = new AStarPathfinder();
+            _currentPath = new List<Node>();
+            _currentPathIndex = 0;
         }
 
         private void Timer_Tick(object sender, EventArgs e)
@@ -60,31 +75,30 @@ namespace MEFRobot
             switch(Estado)
             {
                 case EstadoEnum.Busqueda:
-                    int newX = X, newY = Y;
+                    if (!HayPaquetesPendientes())
+                    {
+                        Estado = EstadoEnum.Completado;
+                        break;
+                    }
+                    
                     Paquete paqueteMasCercano = EncontrarPaqueteMasCercano();
                     
                     if (paqueteMasCercano != null)
                     {
-                        if (X > paqueteMasCercano.X)
-                            newX = X - 1;
-                        if (X < paqueteMasCercano.X)
-                            newX = X + 1;
-                        if (Y > paqueteMasCercano.Y)
-                            newY = Y - 1;
-                        if (Y < paqueteMasCercano.Y)
-                            newY = Y + 1;
+                        _targetPaquete = paqueteMasCercano;
+                        // Calcular camino hacia el paquete más cercano usando A*
+                        _currentPath = _pathfinder.FindPath(X, Y, paqueteMasCercano.X, paqueteMasCercano.Y);
+                        _currentPathIndex = 0;
+                        _currentTarget = new Node(paqueteMasCercano.X, paqueteMasCercano.Y);
                         
-                        ActualizaPosicion(newX, newY);
-                        
-                        if (X == paqueteMasCercano.X && Y == paqueteMasCercano.Y)
+                        if (_currentPath.Count > 0)
                         {
-                            paqueteMasCercano.Recolectado();
-                            Estado = EstadoEnum.NuevaBusqueda;
+                            Estado = EstadoEnum.SiguiendoCamino;
                         }
                     }
                     else
                     {
-                        Estado = EstadoEnum.Aleatorio;
+                        Estado = EstadoEnum.IrBateria;
                     }
                     
                     if (Bateria < UmbralBateria)
@@ -93,31 +107,84 @@ namespace MEFRobot
                     }
                     break;
                 case EstadoEnum.NuevaBusqueda:
+                    _targetPaquete = null;
+                    
                     if (HayPaquetesPendientes())
                     {
                         Estado = EstadoEnum.Busqueda;
                     }
                     else
                     {
-                        Estado = EstadoEnum.Aleatorio;
+                        Estado = EstadoEnum.Completado;
                     }
                     break;
                 case EstadoEnum.IrBateria:
-                    newX = X;
-                    newY = Y;
-                    if (X > estacion.X)
-                        newX = X - 1;
-                    if (X < estacion.X)
-                        newX = X + 1;
-                    if (Y > estacion.Y)
-                        newY = Y - 1;
-                    if (Y < estacion.Y)
-                        newY = Y + 1;
-                    ActualizaPosicion(newX, newY);
+                    _targetPaquete = null;
+                    
                     if (X == estacion.X && Y == estacion.Y)
                     {
                         Estado = EstadoEnum.Recargar;
+                        break; 
                     }
+
+                    // Calcular camino hacia la estación de recarga usando A*
+                    _currentPath = _pathfinder.FindPath(X, Y, estacion.X, estacion.Y);
+                    _currentPathIndex = 0;
+                    _currentTarget = new Node(estacion.X, estacion.Y);
+                    
+                    if (_currentPath.Count > 0)
+                    {
+                        Estado = EstadoEnum.SiguiendoCamino;
+                    }
+                    
+                    if (Bateria == 0)
+                    {
+                        Estado = EstadoEnum.Muerto;
+                    }
+                    break;
+                case EstadoEnum.SiguiendoCamino:
+                    // Seguir el camino calculado por A*
+                    if (_currentPathIndex < _currentPath.Count)
+                    {
+                        var nextNode = _currentPath[_currentPathIndex];
+                        ActualizaPosicion(nextNode.X, nextNode.Y);
+                        _currentPathIndex++;
+                        
+                        if (_currentPathIndex >= _currentPath.Count)
+                        {
+                            if (_targetPaquete != null && _targetPaquete.Visibility == Visibility.Visible && 
+                                X == _targetPaquete.X && Y == _targetPaquete.Y)
+                            {
+                                _targetPaquete.Recolectado();
+                                _paquetesRecolectados++;
+                                _targetPaquete = null;
+                                Estado = EstadoEnum.NuevaBusqueda;
+                            }
+                            else if (X == estacion.X && Y == estacion.Y)
+                            {
+                                Estado = EstadoEnum.Recargar;
+                            }
+                            else
+                            {
+                                Estado = EstadoEnum.Busqueda;
+                            }
+                        }
+                        if (_targetPaquete != null && _targetPaquete.Visibility == Visibility.Hidden)
+                        {
+                            _targetPaquete = null;
+                            Estado = EstadoEnum.Busqueda;
+                        }
+                    }
+                    else
+                    {
+                        Estado = EstadoEnum.Busqueda;
+                    }
+                    if (Bateria < UmbralBateria && (_currentTarget == null || 
+                        (_currentTarget.X != estacion.X && _currentTarget.Y != estacion.Y)))
+                    {
+                        Estado = EstadoEnum.IrBateria;
+                    }
+                    
                     if (Bateria == 0)
                     {
                         Estado = EstadoEnum.Muerto;
@@ -126,17 +193,32 @@ namespace MEFRobot
                 case EstadoEnum.Recargar:
                     RecargarBateria();
                     Thread.Sleep(500);
-                    Estado = EstadoEnum.Busqueda;
+    
+                    if (HayPaquetesPendientes())
+                    {
+                        Estado = EstadoEnum.Busqueda;
+                    }
+                    else
+                    {
+                        Estado = EstadoEnum.Completado;
+                    }
                     break;
                 case EstadoEnum.Muerto:
                     timer.Stop();
                     MessageBox.Show("Ha muerto...");
                     break;
+                case EstadoEnum.Completado:
+                    timer.Stop();
+                    MessageBox.Show($"El robot obtuvo todos los {_paquetesRecolectados} paquetes.");
+                    break;
                 case EstadoEnum.Aleatorio:
-                    ActualizaPosicion(r.NextDouble() > 0.5? X-1:X+1, r.NextDouble() > 0.5? Y-1:Y+1);
-                    if (Bateria == 0)
+                    if (Bateria < BateriaTotal * 0.9)
                     {
-                        Estado = EstadoEnum.Muerto;
+                        Estado = EstadoEnum.IrBateria;
+                    }
+                    else
+                    {
+                        Estado = EstadoEnum.Busqueda;
                     }
                     break;
                 default:
@@ -195,6 +277,9 @@ namespace MEFRobot
         {
             this.paquetes = paquetes;
             this.estacion = estacionRecarga;
+            _paquetesRecolectados = 0;
+            _targetPaquete = null;
+            Estado = EstadoEnum.Busqueda;
             timer.Start();
         }
     }
